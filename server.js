@@ -28,3 +28,18 @@ app.get('/compress', async (req, res) => {
 });
 
 app.listen(3000, () => console.log('Server 3000 par chal raha hai'));
+
+app.get('/load', async (req, res) => {
+  try {
+    const pageUrl = req.query.url;
+    if (!pageUrl || !pageUrl.startsWith('http')) {
+      return res.status(400).send('url galat hai');
+    }
+    const response = await fetch(pageUrl);
+    let html = await response.text();
+   html = html.replace(/src=["'](https?:[^"']+)["']/g, (match, p1) => `src="/compress?url=${encodeURIComponent(p1)}"`);
+    res.send(html);
+  } catch (e) {
+    res.status(500).send('Page load nahi hua');
+  }
+});
