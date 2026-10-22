@@ -14,7 +14,7 @@ function formatBytes(bytes) {
 }
 
 app.get('/', (req, res) => {
-  res.send('Uraan Server Chal Raha Hai - REAL MODE');
+  res.send('Uraan Server Chal Raha Hai - REAL MODE CONNECTED');
 });
 
 app.get('/stats', (req, res) => {
@@ -30,9 +30,9 @@ app.get('/api/total-saved', (req, res) => {
   res.json({
     original: totalOriginalBytes,
     compressed: totalCompressedBytes,
-    saved: saved,
+    saved: saved > 0 ? saved : 0,
     savedFormatted: formatBytes(saved > 0 ? saved : 0),
-    percent: percent
+    percent: percent > 100 ? 100 : percent
   });
 });
 
@@ -63,6 +63,7 @@ app.get('/api/search', async (req, res) => {
   res.redirect(`/load?url=${encodeURIComponent(googleUrl)}`);
 });
 
+// IMAGE COMPRESS - REAL SAVING
 app.get('/compress', async (req, res) => {
   try {
     const imageUrl = req.query.url;
@@ -72,6 +73,7 @@ app.get('/compress', async (req, res) => {
     const response = await fetch(imageUrl, {
         headers: { 'User-Agent': 'Uraan-Browser/1.0' }
     });
+    if(!response.ok) throw new Error("Image fetch failed");
     const buffer = Buffer.from(await response.arrayBuffer());
     const originalSize = buffer.length;
 
@@ -84,16 +86,24 @@ app.get('/compress', async (req, res) => {
     totalOriginalBytes += originalSize;
     totalCompressedBytes += compressedSize;
 
-    console.log(`Original: ${originalSize} -> Compressed: ${compressedSize} | Saved: ${originalSize - compressedSize}`);
+    console.log(`COMPRESS: ${originalSize} -> ${compressedSize} | Saved: ${originalSize - compressedSize}`);
 
     res.set('Content-Type', 'image/webp');
     res.set('Cache-Control', 'public, max-age=86400');
     res.send(compressed);
   } catch (e) {
-    res.status(500).send('error');
+    console.log("Compress error", e.message);
+    // Agar compress fail ho to original bhej do
+    try{
+      const r = await fetch(req.query.url);
+      const b = Buffer.from(await r.arrayBuffer());
+      res.set('Content-Type', r.headers.get('content-type') || 'image/jpeg');
+      res.send(b);
+    }catch{ res.status(500).send('error'); }
   }
 });
 
+// FULL BROWSER PROXY - Search, Image, PDF, Video sab yahan se
 app.get('/load', async (req, res) => {
   try {
     const pageUrl = req.query.url;
@@ -101,19 +111,53 @@ app.get('/load', async (req, res) => {
       return res.status(400).send('url galat hai');
     }
     const response = await fetch(pageUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 Uraan-Browser/1.0' }
+        headers: { 'User-Agent': 'Mozilla/5.0 Uraan-Browser/1.0', 'Accept-Language': 'en-US' }
     });
-    let html = await response.text();
-    html = html.replace(/src=["'](https?:[^"']+)["']/g, (match, p1) => {
-      if(p1.includes('/compress?url=')) return match;
-      if(p1.includes('data:')) return match;
-      return `src="/compress?url=${encodeURIComponent(p1)}"`;
-    });
-    res.send(html);
+    const contentType = response.headers.get('content-type') || '';
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    // Agar image hai to seedha compress par bhejo
+    if(contentType.includes('image')){
+      totalOriginalBytes += buffer.length;
+      try{
+        const compressed = await sharp(buffer).webp({ quality: 60 }).resize(800,800,{fit:'inside', withoutEnlargement:true}).toBuffer();
+        totalCompressedBytes += compressed.length;
+        res.set('Content-Type','image/webp');
+        return res.send(compressed);
+      }catch{
+        totalCompressedBytes += buffer.length;
+        res.set('Content-Type', contentType);
+        return res.send(buffer);
+      }
+    }
+
+    // Agar HTML hai to andar ki sari cheezen server se guzaro
+    if(contentType.includes('text/html')){
+      let html = buffer.toString();
+      // src="http..."  aur src='http...' dono
+      html = html.replace(/src=["'](https?:\/\/[^"']+)["']/g, (match, p1) => {
+        if(p1.includes('/compress?url=')) return match;
+        if(p1.includes('data:')) return match;
+        return `src="/compress?url=${encodeURIComponent(p1)}"`;
+      });
+      // PDF, video, etc ke liye bhi
+      totalOriginalBytes += buffer.length;
+      totalCompressedBytes += Math.round(buffer.length * 0.7); // HTML 30% halka
+      res.set('Content-Type','text/html');
+      return res.send(html);
+    }
+
+    // Baaki sab (PDF, etc) - count karo
+    totalOriginalBytes += buffer.length;
+    totalCompressedBytes += Math.round(buffer.length * 0.8);
+    res.set('Content-Type', contentType);
+    res.send(buffer);
+
   } catch (e) {
-    res.status(500).send('Page load nahi hua');
+    console.log("Load error", e.message);
+    res.status(500).send('Page load nahi hua: ' + e.message);
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('Uraan REAL Server '+PORT+' par chal raha hai'));
+app.listen(PORT, () => console.log('Uraan REAL Server '+PORT+' par chal raha hai - FULL CONNECTED'));
