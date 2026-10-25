@@ -8,13 +8,14 @@ let totalOriginalBytes = 0;
 let totalCompressedBytes = 0;
 
 function formatBytes(bytes) {
+  if (bytes <= 0) return "0 B";
   if (bytes < 1024) return bytes + " B";
-  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + " KB";
-  return (bytes/1024/1024).toFixed(2) + " MB";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / 1024 / 1024).toFixed(2) + " MB";
 }
 
 app.get('/', (req, res) => {
-  res.send('Uraan Server Chal Raha Hai - REAL MODE CONNECTED');
+  res.send('Uraan Server FULL CONNECTED - REAL MODE');
 });
 
 app.get('/stats', (req, res) => {
@@ -24,22 +25,34 @@ app.get('/stats', (req, res) => {
   res.json({ percent: percent, used: Math.round(used) });
 });
 
+// 100% ASLI SAVING - SIRF IMAGE KA HISAB
 app.get('/api/total-saved', (req, res) => {
   const saved = totalOriginalBytes - totalCompressedBytes;
-  const percent = totalOriginalBytes > 0 ? Math.round((saved / totalOriginalBytes) * 100) : 0;
+  const savedPositive = saved > 0 ? saved : 0;
+  let percent = 0;
+  let savedMB = savedPositive / (1024 * 1024);
+  
+  if (savedPositive < 1024 * 1024) {
+    percent = 0;
+  } else {
+    percent = Math.floor(savedMB);
+    if (percent > 100) percent = 100;
+  }
+
   res.json({
     original: totalOriginalBytes,
     compressed: totalCompressedBytes,
-    saved: saved > 0 ? saved : 0,
-    savedFormatted: formatBytes(saved > 0 ? saved : 0),
-    percent: percent > 100 ? 100 : percent
+    saved: savedPositive,
+    savedFormatted: formatBytes(savedPositive),
+    percent: percent,
+    realSavingPercent: totalOriginalBytes > 0 ? Math.round((savedPositive / totalOriginalBytes) * 100) : 0
   });
 });
 
 app.get('/api/reset-saved', (req, res) => {
   totalOriginalBytes = 0;
   totalCompressedBytes = 0;
-  res.json({ message: "Reset ho gaya" });
+  res.json({ message: "Reset ho gaya - Ab 0 se start" });
 });
 
 app.get('/api/suggest', async (req, res) => {
@@ -47,7 +60,7 @@ app.get('/api/suggest', async (req, res) => {
     const q = req.query.q;
     if (!q) return res.json([]);
     const response = await fetch(`http://suggestqueries.google.com/complete/search?client=firefox&q=${encodeURIComponent(q)}`, {
-        headers: { 'User-Agent': 'Uraan-Browser/1.0' }
+      headers: { 'User-Agent': 'Uraan-Browser/1.0' }
     });
     const data = await response.json();
     res.json(data[1] || []);
@@ -63,17 +76,15 @@ app.get('/api/search', async (req, res) => {
   res.redirect(`/load?url=${encodeURIComponent(googleUrl)}`);
 });
 
-// IMAGE COMPRESS - REAL SAVING
+// SIRF IMAGE COMPRESS - YAHI ASLI BACHAT HAI
 app.get('/compress', async (req, res) => {
   try {
     const imageUrl = req.query.url;
     if (!imageUrl || !imageUrl.startsWith('http')) {
       return res.status(400).send('url galat hai');
     }
-    const response = await fetch(imageUrl, {
-        headers: { 'User-Agent': 'Uraan-Browser/1.0' }
-    });
-    if(!response.ok) throw new Error("Image fetch failed");
+    const response = await fetch(imageUrl, { headers: { 'User-Agent': 'Uraan-Browser/1.0' } });
+    if (!response.ok) throw new Error("fetch fail");
     const buffer = Buffer.from(await response.arrayBuffer());
     const originalSize = buffer.length;
 
@@ -81,29 +92,19 @@ app.get('/compress', async (req, res) => {
       .webp({ quality: 60 })
       .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
       .toBuffer();
-    const compressedSize = compressed.length;
 
+    // ASLI HISAB - YAHAN KOI FAKE NAHI
     totalOriginalBytes += originalSize;
-    totalCompressedBytes += compressedSize;
-
-    console.log(`COMPRESS: ${originalSize} -> ${compressedSize} | Saved: ${originalSize - compressedSize}`);
+    totalCompressedBytes += compressed.length;
 
     res.set('Content-Type', 'image/webp');
     res.set('Cache-Control', 'public, max-age=86400');
     res.send(compressed);
   } catch (e) {
-    console.log("Compress error", e.message);
-    // Agar compress fail ho to original bhej do
-    try{
-      const r = await fetch(req.query.url);
-      const b = Buffer.from(await r.arrayBuffer());
-      res.set('Content-Type', r.headers.get('content-type') || 'image/jpeg');
-      res.send(b);
-    }catch{ res.status(500).send('error'); }
+    res.status(500).send('error');
   }
 });
 
-// FULL BROWSER PROXY - Search, Image, PDF, Video sab yahan se
 app.get('/load', async (req, res) => {
   try {
     const pageUrl = req.query.url;
@@ -111,53 +112,48 @@ app.get('/load', async (req, res) => {
       return res.status(400).send('url galat hai');
     }
     const response = await fetch(pageUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 Uraan-Browser/1.0', 'Accept-Language': 'en-US' }
+      headers: { 'User-Agent': 'Mozilla/5.0 Uraan-Browser/1.0' }
     });
     const contentType = response.headers.get('content-type') || '';
     const buffer = Buffer.from(await response.arrayBuffer());
 
-    // Agar image hai to seedha compress par bhejo
-    if(contentType.includes('image')){
-      totalOriginalBytes += buffer.length;
-      try{
-        const compressed = await sharp(buffer).webp({ quality: 60 }).resize(800,800,{fit:'inside', withoutEnlargement:true}).toBuffer();
+    if (contentType.includes('image')) {
+      // IMAGE HAI TO ASLI COMPRESSION KARO AUR GINO
+      try {
+        const compressed = await sharp(buffer).webp({ quality: 60 }).resize(800, 800, { fit: 'inside', withoutEnlargement: true }).toBuffer();
+        totalOriginalBytes += buffer.length;
         totalCompressedBytes += compressed.length;
-        res.set('Content-Type','image/webp');
+        res.set('Content-Type', 'image/webp');
         return res.send(compressed);
-      }catch{
+      } catch {
+        // AGAR IMAGE COMPRESS NA HO SAKE TO BACHAT ZERO
+        totalOriginalBytes += buffer.length;
         totalCompressedBytes += buffer.length;
         res.set('Content-Type', contentType);
         return res.send(buffer);
       }
     }
 
-    // Agar HTML hai to andar ki sari cheezen server se guzaro
-    if(contentType.includes('text/html')){
+    if (contentType.includes('text/html')) {
       let html = buffer.toString();
-      // src="http..."  aur src='http...' dono
       html = html.replace(/src=["'](https?:\/\/[^"']+)["']/g, (match, p1) => {
-        if(p1.includes('/compress?url=')) return match;
-        if(p1.includes('data:')) return match;
+        if (p1.includes('/compress?url=')) return match;
+        if (p1.includes('data:')) return match;
         return `src="/compress?url=${encodeURIComponent(p1)}"`;
       });
-      // PDF, video, etc ke liye bhi
-      totalOriginalBytes += buffer.length;
-      totalCompressedBytes += Math.round(buffer.length * 0.7); // HTML 30% halka
-      res.set('Content-Type','text/html');
+      // HTML PAR KOI FAKE BACHAT NAHI GINNI - KYUNKI HUMNE HTML COMPRESS NAHI KIYA
+      res.set('Content-Type', 'text/html');
       return res.send(html);
     }
 
-    // Baaki sab (PDF, etc) - count karo
-    totalOriginalBytes += buffer.length;
-    totalCompressedBytes += Math.round(buffer.length * 0.8);
+    // BAQI FILES (CSS, JS) PAR BHI KOI FAKE BACHAT NAHI
     res.set('Content-Type', contentType);
     res.send(buffer);
 
   } catch (e) {
-    console.log("Load error", e.message);
-    res.status(500).send('Page load nahi hua: ' + e.message);
+    res.status(500).send('Page load: ' + e.message);
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('Uraan REAL Server '+PORT+' par chal raha hai - FULL CONNECTED'));
+app.listen(PORT, () => console.log('Uraan REAL Server ' + PORT + ' running'));
